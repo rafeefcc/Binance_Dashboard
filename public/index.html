@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance Trading Dashboard</title>
+    <meta name="description" content="Real-time Binance trading dashboard with P&L tracking and market monitoring">
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+
+<body>
+    <div class="app-container" id="appContainer" style="display: none;">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <h1>🚀 Binance Dashboard</h1>
+            </div>
+            <div class="header-right">
+                <div class="user-profile" id="userProfile">
+                    <img src="" alt="User" id="userAvatar" class="user-avatar">
+                    <span id="userName">Loading...</span>
+                </div>
+                <button class="logout-btn" id="logoutBtn">Logout</button>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="tab-nav">
+            <button class="tab-btn active" data-tab="dashboard">
+                <span>📊</span> Dashboard
+            </button>
+            <button class="tab-btn" data-tab="scanner">
+                <span>🔍</span> Market Scanner
+            </button>
+            <button class="tab-btn" data-tab="settings">
+                <span>⚙️</span> Settings
+            </button>
+            <button class="tab-btn" data-tab="history">
+                <span>📜</span> History
+            </button>
+        </nav>
+
+        <!-- Tab Content -->
+        <main class="tab-content">
+            <!-- Dashboard Tab -->
+            <div class="tab-pane active" id="dashboard-tab">
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">Total Invested</div>
+                        <div class="metric-value" id="totalInvested">$0.00</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Total P&L</div>
+                        <div class="metric-value" id="totalPL">$0.00</div>
+                        <div class="metric-change" id="totalPLPercent">0.00%</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Total Trades</div>
+                        <div class="metric-value" id="totalTrades">0</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Open Positions</div>
+                        <div class="metric-value" id="openPositions">0</div>
+                    </div>
+                </div>
+
+                <div class="controls-bar">
+                    <div class="time-filter">
+                        <button class="filter-btn" data-period="24h">24H</button>
+                        <button class="filter-btn" data-period="7d">7D</button>
+                        <button class="filter-btn" data-period="30d">30D</button>
+                        <button class="filter-btn active" data-period="all">All Time</button>
+                    </div>
+                    <button class="refresh-btn" id="refreshBtn">🔄 Refresh</button>
+                </div>
+
+                <div class="trades-container">
+                    <h2>Open Positions</h2>
+                    <div class="table-container">
+                        <table class="trades-table" id="tradesTable">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Position</th>
+                                    <th>Invested USDT</th>
+                                    <th>Avg Cost</th>
+                                    <th>Current Price</th>
+                                    <th>Realized P&L</th>
+                                    <th>Unrealized P&L</th>
+                                    <th>Total P&L</th>
+                                    <th>P&L %</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tradesTableBody">
+                                <tr>
+                                    <td colspan="9" class="loading-cell">Loading trades...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Market Scanner Tab -->
+            <div class="tab-pane" id="scanner-tab">
+                <div class="scanner-header">
+                    <h2>Market Scanner</h2>
+                    <div class="scanner-status">
+                        <span class="status-indicator" id="scannerStatus"></span>
+                        <span id="lastScanTime">Initializing...</span>
+                    </div>
+                </div>
+
+                <div class="telegram-config">
+                    <h3>Telegram Notifications</h3>
+                    <div class="config-row">
+                        <input type="text" id="telegramChatId" placeholder="Enter Telegram Chat ID" class="input-field">
+                        <button class="save-btn" id="saveTelegramBtn">Save Chat ID</button>
+                    </div>
+                    <p class="help-text">
+                        💡 To get your Chat ID: Send a message to your bot, then visit
+                        <code>https://api.telegram.org/bot&lt;YOUR_BOT_TOKEN&gt;/getUpdates</code>
+                    </p>
+                </div>
+
+                <div class="scanner-controls">
+                    <button class="scan-btn" id="manualScanBtn">🔍 Scan Now</button>
+                    <span class="scan-info">Auto-scan every 5 minutes</span>
+                </div>
+
+                <div class="table-container">
+                    <table class="scanner-table" id="scannerTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Symbol</th>
+                                <th>Bid Volume</th>
+                                <th>Ask Volume</th>
+                                <th>Net Inflow</th>
+                                <th>Trend</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scannerTableBody">
+                            <tr>
+                                <td colspan="6" class="loading-cell">Waiting for scan...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- History Tab -->
+            <div class="tab-pane" id="history-tab">
+                <!-- Pair Performance Summary -->
+                <div class="trades-container" style="margin-bottom: 2rem;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h2>📊 Pair Performance Summary</h2>
+                        <button id="toggleSummaryBtn" class="refresh-btn"
+                            style="background: var(--card-bg); border: 1px solid var(--border-color);">
+                            ▼ Collapse
+                        </button>
+                    </div>
+                    <div id="pairSummaryContainer" class="table-container">
+                        <table class="trades-table" id="pairSummaryTable">
+                            <thead>
+                                <tr>
+                                    <th>Pair</th>
+                                    <th>Total Trades</th>
+                                    <th>Buys</th>
+                                    <th>Sells</th>
+                                    <th>Total Volume (USDT)</th>
+                                    <th>Avg Buy Price</th>
+                                    <th>Avg Sell Price</th>
+                                    <th>Total Realized P&L</th>
+                                    <th>Avg P&L per Trade</th>
+                                    <th>Win Rate</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pairSummaryBody">
+                                <tr>
+                                    <td colspan="10" class="loading-cell">Loading summary...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Detailed Trade History -->
+                <div class="trades-container">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h2>Executed Trade History</h2>
+                        <div style="display: flex; gap: 1rem; align-items: center;">
+                            <button id="exportCsvBtn" class="refresh-btn"
+                                style="background: var(--card-bg); border: 1px solid var(--border-color);">
+                                ⬇️ Export CSV
+                            </button>
+                            <div id="historySummary" style="font-size: 1.1rem; font-weight: 600;">
+                                Total Realized P&L: <span id="historyTotalPL" class="metric-value">$0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="trades-table" id="historyTable">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Pair</th>
+                                    <th>Side</th>
+                                    <th>Price</th>
+                                    <th>Qty</th>
+                                    <th>Net USDT</th>
+                                    <th>Net Coin</th>
+                                    <th>Fee</th>
+                                    <th>Realized P&L</th>
+                                    <th>P&L %</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                                <tr>
+                                    <td colspan="9" class="loading-cell">Loading history...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div class="tab-pane" id="settings-tab">
+                <div class="settings-container">
+                    <h2>Configuration</h2>
+
+                    <div class="settings-section">
+                        <h3>Binance API Configuration</h3>
+                        <div class="form-group">
+                            <label for="binanceApiKey">API Key</label>
+                            <input type="text" id="binanceApiKey" class="input-field"
+                                placeholder="Enter your Binance API Key">
+                        </div>
+                        <div class="form-group">
+                            <label for="binanceApiSecret">API Secret</label>
+                            <input type="password" id="binanceApiSecret" class="input-field"
+                                placeholder="Enter your Binance API Secret">
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Telegram Bot Configuration</h3>
+                        <div class="form-group">
+                            <label for="telegramBotToken">Bot Token</label>
+                            <input type="text" id="telegramBotToken" class="input-field"
+                                placeholder="Enter your Telegram Bot Token">
+                        </div>
+                        <p class="help-text">
+                            💡 Get your bot token from <a href="https://t.me/botfather" target="_blank">@BotFather</a>
+                            on Telegram
+                        </p>
+                    </div>
+
+                    <div class="settings-actions">
+                        <button class="save-settings-btn" id="saveSettingsBtn">💾 Save Configuration</button>
+                    </div>
+
+                    <div class="settings-status" id="settingsStatus"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/auth.js"></script>
+    <script src="/js/app.js"></script>
+    <script src="/js/settings.js"></script>
+    <script src="/js/marketScanner.js"></script>
+</body>
+
+</html>

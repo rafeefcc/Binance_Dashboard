@@ -1,0 +1,5 @@
+I want you to build an app with running dashboard which would run in port 5008, use websocket for live updates and REST API for others, which will show all the trades done within my binance id via API and show how much i lost in a particular trade or if its ongoing.@postman Json has all the valid postman requests for your help. only work with binance mainnet. 
+
+Design the dashboard according to your own liking, in summary i want to just have a dashboard where i can see total amount invested, and total profit/loss for any particular time period and i could filter it via simple pivot according to specific trade, all from live binance dashboard. 
+
+Please include another tab which will check each coin within binance database every 5 minutes and show the coins market list sorted by highest positive inflow over last 5 minutes, with a optional telegram chat id to put, which will send a telegram message to a specific group when seletected coin would have a surge of net inflow over past 5 minutes
