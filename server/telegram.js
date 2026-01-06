@@ -328,9 +328,44 @@ Significant price increase detected!
     }
 }
 
+// Send batch market surge alert for a specific user
+async function sendBatchMarketAlert(userId, results) {
+    if (!results || results.length === 0) return false;
+
+    const config = getTelegramConfig(userId);
+    const chatId = config.chatId;
+
+    if (!chatId) return false;
+
+    let message = `🚀 <b>Market Surge Summary</b>\n\n`;
+
+    // Limit to top 15 to avoid message length limits
+    const displayResults = results.slice(0, 15);
+
+    displayResults.forEach(res => {
+        message += `• <b>${res.symbol}</b>: +${res.percentChange.toFixed(2)}% ($${res.newPrice.toFixed(4)})\n`;
+    });
+
+    if (results.length > 15) {
+        message += `\n...and ${results.length - 15} more pairs.`;
+    }
+
+    message += `\n\n<i>Timeframe: Last ${results[0].timeWindow} min</i>`;
+
+    try {
+        await sendMessage(userId, message);
+        console.log(`✅ Sent batch price alert (${results.length} coins) to user ${userId}`);
+        return true;
+    } catch (error) {
+        console.error(`❌ Failed to send batch alert to user ${userId}:`, error.message);
+        return false;
+    }
+}
+
 module.exports = {
     initBotForUser,
     initAllBots,
     sendMessage,
-    sendMarketAlert
+    sendMarketAlert,
+    sendBatchMarketAlert
 };

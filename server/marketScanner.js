@@ -1,11 +1,11 @@
 const { getTickerPrice, getExchangeInfo } = require('./binance');
-const { sendMarketAlert } = require('./telegram');
+const { sendBatchMarketAlert } = require('./telegram');
 const { getAllUsersWithTelegram } = require('./database');
 
 // Store price history for comparison
 // Structure: Map<symbol, [{price, timestamp}, ...]>
 const priceHistory = new Map();
-const HISTORY_LIMIT_MS = 25 * 60 * 1000; // Keep 25 minutes of history
+const HISTORY_LIMIT_MS = 15 * 60 * 1000; // Keep 15 minutes of history
 const ALERT_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes cooldown per symbol
 
 const cooldowns = new Map(); // symbol -> lastAlertTime
@@ -63,19 +63,18 @@ async function scanMarkets() {
             const history = priceHistory.get(symbol);
 
             // 1. Check for alerts BEFORE adding new price to history
-            // We look for a price point from ~15-20 minutes ago
-            const targetTime = now - (15 * 60 * 1000); // 15 mins ago
+            // We look for a price point from ~5 minutes ago
+            const targetTime = now - (5 * 60 * 1000); // 5 mins ago
 
-            // Find the oldest price in the window [targetTime - 6mins, targetTime]
-            // This ensures we compare against a stable baseline from about 15-20 mins ago
-            const baseline = history.find(h => h.timestamp <= targetTime && h.timestamp > targetTime - (10 * 60 * 1000));
+            // Find a price in the window [targetTime - 2.5mins, targetTime]
+            const baseline = history.find(h => h.timestamp <= targetTime && h.timestamp > targetTime - (150 * 1000));
 
             if (baseline) {
                 const percentChange = ((currentPrice - baseline.price) / baseline.price) * 100;
                 const timeDiffMins = Math.round((now - baseline.timestamp) / 60000);
 
-                // Alert if price increased by more than 1%
-                if (percentChange >= 1.0) {
+                // Alert if price increased by more than 0.65%
+                if (percentChange >= 0.65) {
                     // Check cooldown
                     const lastAlert = cooldowns.get(symbol) || 0;
                     if (now - lastAlert > ALERT_COOLDOWN_MS) {
@@ -89,12 +88,6 @@ async function scanMarkets() {
                             newPrice: currentPrice,
                             percentChange,
                             timeWindow: timeDiffMins
-                        });
-
-                        // Send alerts to all configured users
-                        const users = getAllUsersWithTelegram();
-                        users.forEach(user => {
-                            sendMarketAlert(user.user_id, symbol, baseline.price, currentPrice, percentChange, timeDiffMins);
                         });
                     }
                 }
@@ -110,7 +103,17 @@ async function scanMarkets() {
             }
         });
 
-        console.log(`✅ Price scan complete. Checked ${allSymbols.length} pairs.`);
+        if (alertResults.length === 0) {
+            console.log(`📝 NO significant changes found for 0.65% on 5 minutes (Checked ${allSymbols.length} pairs)`);
+        } else {
+            console.log(`🚀 Price scan complete. Found ${alertResults.length} surges. Checked ${allSymbols.length} pairs.`);
+
+            // Send batch alerts to all configured users
+            const users = getAllUsersWithTelegram();
+            for (const user of users) {
+                await sendBatchMarketAlert(user.user_id, alertResults);
+            }
+        }
 
         isScanning = false;
         return alertResults;

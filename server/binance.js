@@ -122,6 +122,10 @@ async function getExchangeInfo() {
     return await publicRequest('/api/v3/exchangeInfo');
 }
 
+async function getKlines(symbol, interval, limit = 100) {
+    return await publicRequest('/api/v3/klines', { symbol, interval, limit });
+}
+
 module.exports = {
     getAccountInfo,
     getTrades,
@@ -131,5 +135,7 @@ module.exports = {
     get24hrTicker,
     getOrderBook,
     getExchangeInfo,
-    getApiKeys
+    getApiKeys,
+    getKlines,
+    publicRequest
 };
