@@ -1,7 +1,16 @@
 const express = require('express');
 const passport = require('passport');
 const { ensureAuthenticated } = require('./auth');
-const { getAccountInfo, getTrades, getAllOrders, getOpenOrders, getTickerPrice, getApiKeys, getExchangeInfo } = require('./binance');
+const {
+    getAccountInfo,
+    getTrades,
+    getAllOrders,
+    getOpenOrders,
+    getTickerPrice,
+    getApiKeys,
+    getExchangeInfo,
+    getUserAssets
+} = require('./binance');
 const { getPublicSettings, saveSettings } = require('./settings');
 const { scanMarkets } = require('./marketScanner');
 const { initBotForUser } = require('./telegram');
@@ -165,7 +174,7 @@ router.get('/api/trades/all', ensureAuthenticated, async (req, res) => {
         }
 
         // Calculate P&L for each trade
-        const tradesWithPL = await calculateProfitLoss(allTrades);
+        const tradesWithPL = await calculateProfitLoss(allTrades, req.user.id);
 
         res.json(tradesWithPL);
     } catch (error) {
@@ -173,72 +182,108 @@ router.get('/api/trades/all', ensureAuthenticated, async (req, res) => {
     }
 });
 
+async function calculatePortfolio(userId, period) {
+    // Get account info to identify symbols
+    console.log(`[Portfolio] Starting calculation for user ${userId}`);
+    const account = await getAccountInfo(userId);
+    const exchangeInfo = await getExchangeInfo();
+    const validQuoteAssets = ['USDT', 'FDUSD'];
+
+    const heldAssets = account.balances
+        .filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
+        .map(b => b.asset);
+
+    let symbols = [];
+    heldAssets.forEach(asset => {
+        if (validQuoteAssets.includes(asset)) return;
+        const pairs = exchangeInfo.symbols
+            .filter(s => s.baseAsset === asset && validQuoteAssets.includes(s.quoteAsset))
+            .map(s => s.symbol);
+        symbols.push(...pairs);
+    });
+
+    const allTrades = [];
+    for (const symbol of symbols) {
+        try {
+            const trades = await getTrades(symbol, 500, userId);
+            allTrades.push(...trades.map(t => ({ ...t, symbol })));
+        } catch (error) {
+            continue;
+        }
+    }
+
+    console.log(`[Portfolio] Processing ${allTrades.length} total trades across ${symbols.length} symbols`);
+    const pnlResults = await calculateProfitLoss(allTrades, userId);
+    console.log(`[Portfolio] P&L calculation complete. Found ${pnlResults.length} symbol results`);
+
+    const significantPositions = pnlResults.filter(r => r.position > 0 && (r.position * r.averageCost) >= 1.0);
+    const totalInvested = significantPositions.reduce((sum, r) => sum + (r.position * r.averageCost), 0);
+    const totalRealized = pnlResults.reduce((sum, r) => sum + r.realizedPL, 0);
+    const totalUnrealized = significantPositions.reduce((sum, r) => sum + r.unrealizedPL, 0);
+    const totalPL = totalUnrealized;
+    const plPercentage = totalInvested > 0 ? (totalPL / totalInvested) * 100 : 0;
+
+    const userAssets = await getUserAssets(userId);
+    const accountInfo = await getAccountInfo(userId);
+    const spotBalances = {};
+    accountInfo.balances.forEach(b => {
+        const val = parseFloat(b.free) + parseFloat(b.locked);
+        if (val > 0) spotBalances[b.asset] = val;
+    });
+
+    let totalAssetValue = 0;
+    const prices = await getTickerPrice();
+    const priceMap = {};
+    prices.forEach(p => priceMap[p.symbol] = parseFloat(p.price));
+
+    if (userAssets && userAssets.length > 0) {
+        userAssets.forEach(asset => {
+            const amount = parseFloat(asset.free) + parseFloat(asset.locked) + parseFloat(asset.freeze) + parseFloat(asset.withdrawing);
+            if (amount <= 0) return;
+
+            if (['USDT', 'FDUSD', 'USDC'].includes(asset.asset)) {
+                totalAssetValue += amount;
+            } else {
+                const symbol = `${asset.asset}USDT`;
+                const price = priceMap[symbol] || 0;
+                totalAssetValue += (amount * price);
+            }
+        });
+    }
+
+    let spotValue = 0;
+    Object.entries(spotBalances).forEach(([asset, amount]) => {
+        if (['USDT', 'FDUSD', 'USDC'].includes(asset)) {
+            spotValue += amount;
+        } else {
+            const symbol = `${asset}USDT`;
+            const price = priceMap[symbol] || 0;
+            spotValue += (amount * price);
+        }
+    });
+
+    totalAssetValue = Math.max(totalAssetValue, spotValue);
+    console.log(`[Portfolio] Calculated Total Asset Value: ${totalAssetValue}`);
+
+    return {
+        totalInvested,
+        totalRealized,
+        totalPL,
+        totalAssetValue,
+        plPercentage,
+        tradeCount: allTrades.length,
+        period
+    };
+}
+
 // Get portfolio summary
 router.get('/api/portfolio', ensureAuthenticated, async (req, res) => {
     try {
         const { period } = req.query; // 24h, 7d, 30d, all
-
-        // Get account info to identify symbols
-        const account = await getAccountInfo(req.user.id);
-        const exchangeInfo = await getExchangeInfo();
-        const validQuoteAssets = ['USDT', 'FDUSD'];
-
-        const heldAssets = account.balances
-            .filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
-            .map(b => b.asset);
-
-        let symbols = [];
-        heldAssets.forEach(asset => {
-            if (validQuoteAssets.includes(asset)) return;
-            const pairs = exchangeInfo.symbols
-                .filter(s => s.baseAsset === asset && validQuoteAssets.includes(s.quoteAsset))
-                .map(s => s.symbol);
-            symbols.push(...pairs);
-        });
-
-        const allTrades = [];
-        for (const symbol of symbols) {
-            try {
-                const trades = await getTrades(symbol, 500, req.user.id);
-                allTrades.push(...trades.map(t => ({ ...t, symbol })));
-            } catch (error) {
-                continue;
-            }
-        }
-
-        // Use the centralized P&L logic to process all data first
-        // This ensures weighted average costs and realized P&L are accurate globally
-        const pnlResults = await calculateProfitLoss(allTrades);
-
-        // Calculate Total Invested (Risk) based on OPEN positions only
-        const totalInvested = pnlResults
-            .filter(r => r.position > 0)
-            .reduce((sum, r) => sum + (r.position * r.averageCost), 0);
-
-        // Calculate Totals
-        // Total Realized P&L (lifetime)
-        const totalRealized = pnlResults.reduce((sum, r) => sum + r.realizedPL, 0);
-
-        // Total Unrealized P&L (only for OPEN positions)
-        const totalUnrealized = pnlResults
-            .filter(r => r.position > 0)
-            .reduce((sum, r) => sum + r.unrealizedPL, 0);
-
-        // Total P&L for dashboard = only unrealized P&L of open positions
-        const totalPL = totalUnrealized;
-
-        // PL Percentage on Active Investment (Risk)
-        const plPercentage = totalInvested > 0 ? (totalPL / totalInvested) * 100 : 0;
-
-        res.json({
-            totalInvested,   // Cost of Open Positions
-            totalRealized,   // Lifetime realized P&L
-            totalPL,         // Unrealized P&L of open positions only
-            plPercentage,
-            tradeCount: allTrades.length,
-            period
-        });
+        const data = await calculatePortfolio(req.user.id, period);
+        res.json(data);
     } catch (error) {
+        console.error('[Portfolio ERROR]:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -267,7 +312,9 @@ router.get('/api/market-scan', ensureAuthenticated, async (req, res) => {
 
 // ============ Helper Functions ============
 
-async function calculateProfitLoss(trades) {
+async function calculateProfitLoss(trades, userId = null) {
+    if (!trades || trades.length === 0) return [];
+
     // Group trades by symbol
     const tradesBySymbol = {};
     trades.forEach(trade => {
@@ -277,11 +324,29 @@ async function calculateProfitLoss(trades) {
         tradesBySymbol[trade.symbol].push(trade);
     });
 
-    // Get current prices
-    const prices = await getTickerPrice();
+    // Get current prices and actual account balances if userId provided
+    const [prices, accountInfo] = await Promise.all([
+        getTickerPrice(),
+        userId ? getAccountInfo(userId) : Promise.resolve(null)
+    ]);
+
     const priceMap = {};
     prices.forEach(p => {
         priceMap[p.symbol] = parseFloat(p.price);
+    });
+
+    const balanceMap = {};
+    if (accountInfo) {
+        accountInfo.balances.forEach(b => {
+            balanceMap[b.asset] = parseFloat(b.free) + parseFloat(b.locked);
+        });
+    }
+
+    // Get exchange info for base assets
+    const exchangeInfo = await getExchangeInfo();
+    const symbolToBaseAsset = {};
+    exchangeInfo.symbols.forEach(s => {
+        symbolToBaseAsset[s.symbol] = s.baseAsset;
     });
 
     // Calculate P&L for each symbol
@@ -299,10 +364,7 @@ async function calculateProfitLoss(trades) {
         const enrichedTrades = symbolTrades.map(trade => {
             const qty = parseFloat(trade.qty);
             const price = parseFloat(trade.price);
-
-            // IGNORE API fee, calculate flat estimated fee
             const estimatedFee = (price * qty) * FLAT_FEE_RATE;
-
             const isBuyer = trade.isBuyer;
             const isMaker = trade.isMaker;
 
@@ -312,7 +374,6 @@ async function calculateProfitLoss(trades) {
             let type = isBuyer ? 'BUY' : 'SELL';
 
             if (isBuyer) {
-                // WACB Update: New Avg = ((Pos * WAP) + (Qty * Price)) / (Pos + Qty)
                 const oldCost = position * weightedAvgPrice;
                 const newCost = qty * price;
                 const newPos = position + qty;
@@ -320,31 +381,18 @@ async function calculateProfitLoss(trades) {
                 if (newPos > 0) {
                     weightedAvgPrice = (oldCost + newCost) / newPos;
                 }
-
                 position = newPos;
-
-                // Net Coin: Qty (Fee is assumed paid in USDT/Quote for simplicity in "Net Coin" or we assume "Net Coin" is just Qty bought)
-                // User asked to ignore BNB fees. 
-                // If we assume fee is deducted from the principal (USDT), then:
                 netCoin = qty;
-                // Net USDT: -(Price * Qty) - Estimated USDT Fee
                 netUSDT = -(qty * price) - estimatedFee;
-
             } else { // SELL
                 const proceeds = qty * price;
                 const costBasis = qty * weightedAvgPrice;
-
-                // Net USDT: Proceeds - Estimated Fee
                 netUSDT = proceeds - estimatedFee;
                 netCoin = -qty;
-
-                // Realized P&L = Proceeds - Cost Basis - Estimated Fee
                 tradePL = proceeds - costBasis - estimatedFee;
                 realizedPL += tradePL;
-
                 position -= qty;
 
-                // Reset WAP if closed (standard practice)
                 if (position <= 0.00000001) {
                     position = 0;
                     weightedAvgPrice = 0;
@@ -358,13 +406,43 @@ async function calculateProfitLoss(trades) {
                 weightedAvgPriceSnapshot: weightedAvgPrice,
                 netInCoin: netCoin,
                 netInUSDT: netUSDT,
-                isMaker: isMaker, // Propagate isMaker
+                isMaker: isMaker,
                 fee: estimatedFee,
                 feeAsset: 'USDT (Est)'
             };
         });
 
-        // Final P&L Stats
+        // RECONCILIATION WITH WALLET
+        const baseAsset = symbolToBaseAsset[symbol];
+        if (userId && balanceMap[baseAsset] !== undefined) {
+            const actualBalance = balanceMap[baseAsset];
+
+            // If actual balance is near zero, force position to 0 to prevent "stuck" UI entries
+            if (actualBalance < 0.00001) {
+                if (position > 0) {
+                    console.log(`[Sync] Correcting ${symbol}: trade-calc ${position} -> wallet ${actualBalance} (Stuck Position Fixed)`);
+                    position = 0;
+                    weightedAvgPrice = 0;
+                }
+            } else if (Math.abs(position - actualBalance) / Math.max(position, actualBalance) > 0.05) {
+                // If discrepancy > 5%, trust the wallet balance for quantity
+                // but keep the weighted average price from trades as it's our best guess
+                console.log(`[Sync] Adjusted ${symbol} qty: ${position.toFixed(4)} -> ${actualBalance.toFixed(4)}`);
+                position = actualBalance;
+            }
+        }
+
+        // Filter out positions < $1 (Dust)
+        const investedValue = position * weightedAvgPrice;
+        if (position > 0 && investedValue < 1.0) {
+            // Keep the trades in history but mark position as 0 for "Open Positions" view
+            // However, it's better to just set status CLOSED if it's dust
+            // or let the frontend filter it. The user asked "not to show in frontend under open positions".
+            // Setting position to 0 here would hide it from the open positions logic.
+            position = 0;
+            weightedAvgPrice = 0;
+        }
+
         const currentPrice = priceMap[symbol] || 0;
         const unrealizedPL = (currentPrice - weightedAvgPrice) * position;
         const totalPL = realizedPL + unrealizedPL;
@@ -378,7 +456,7 @@ async function calculateProfitLoss(trades) {
             realizedPL,
             unrealizedPL,
             totalPL,
-            plPercentage: weightedAvgPrice > 0 ? ((currentPrice - weightedAvgPrice) / weightedAvgPrice) * 100 : 0,
+            plPercentage: (weightedAvgPrice > 0 && position > 0) ? ((currentPrice - weightedAvgPrice) / weightedAvgPrice) * 100 : 0,
             status: position > 0 ? 'ONGOING' : 'CLOSED'
         });
     }

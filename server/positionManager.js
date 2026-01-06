@@ -23,69 +23,81 @@ class PositionManager {
             const exchangeInfo = await getExchangeInfo();
             const validQuoteAssets = ['USDT', 'FDUSD'];
 
-            const balances = accountInfo.balances.filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
-            const userSymbols = new Map(); // symbol -> position details
+            const balanceMap = new Map();
+            accountInfo.balances.forEach(b => {
+                const total = parseFloat(b.free) + parseFloat(b.locked);
+                if (total > 0) balanceMap.set(b.asset, total);
+            });
 
-            for (const bal of balances) {
-                if (validQuoteAssets.includes(bal.asset)) continue;
+            const userSymbols = new Map();
 
-                // Find all symbols where this asset is the base and quote is USDT or FDUSD
-                const pairs = exchangeInfo.symbols
-                    .filter(s => s.baseAsset === bal.asset && validQuoteAssets.includes(s.quoteAsset))
-                    .map(s => s.symbol);
+            // Asset -> Symbols mapping
+            const assetToSymbols = new Map();
+            exchangeInfo.symbols.forEach(s => {
+                if (validQuoteAssets.includes(s.quoteAsset)) {
+                    if (!assetToSymbols.has(s.baseAsset)) assetToSymbols.set(s.baseAsset, []);
+                    assetToSymbols.get(s.baseAsset).push(s.symbol);
+                }
+            });
 
+            for (const [asset, actualBalance] of balanceMap.entries()) {
+                if (validQuoteAssets.includes(asset)) continue;
+
+                const pairs = assetToSymbols.get(asset) || [];
                 for (const symbol of pairs) {
                     try {
                         const trades = await getTrades(symbol, 500, userId);
-                        if (!trades || trades.length === 0) continue;
+                        if (!trades || trades.length === 0) {
+                            // If we have balance but no recent trades, we might still want to track it
+                            // but for P&L we need trades. For now, skip if no trades found in last 500.
+                            continue;
+                        }
 
-                        // Calculate WACB (same logic as routes.js)
                         let totalQty = 0;
                         let totalCost = 0;
-                        let realizedPL = 0;
 
                         for (const trade of trades) {
                             const price = parseFloat(trade.price);
                             const qty = parseFloat(trade.qty);
-                            const fee = parseFloat(trade.commission || 0); // Simplified fee
-                            const isBuyer = trade.isBuyer;
-
-                            if (isBuyer) {
+                            if (trade.isBuyer) {
                                 totalQty += qty;
                                 totalCost += (price * qty);
                             } else {
-                                // Sell
                                 if (totalQty > 0) {
                                     const avgBuyPrice = totalCost / totalQty;
-                                    const costBasis = avgBuyPrice * qty;
-                                    const sellValue = price * qty;
-                                    realizedPL += (sellValue - costBasis);
-
                                     totalQty -= qty;
-                                    totalCost -= costBasis; // Reduce cost basis proportionally
+                                    totalCost -= (avgBuyPrice * qty);
                                 }
                             }
                         }
 
-                        // Only track active positions
-                        if (totalQty > 0.00001) { // Ignore dust
-                            const avgPrice = totalQty > 0 ? totalCost / totalQty : 0;
-
-                            userSymbols.set(symbol, {
-                                symbol,
-                                qty: totalQty,
-                                avgPrice: avgPrice,
-                                invested: totalCost,
-                                currentPrice: 0, // Will be updated by live feed
-                                unrealizedPL: 0,
-                                unrealizedPLPercent: 0,
-                                timestamp: Date.now()
-                            });
+                        // RECONCILIATION
+                        let finalQty = totalQty;
+                        if (actualBalance < 0.00001) {
+                            finalQty = 0; // Force close if wallet is empty
+                        } else if (Math.abs(totalQty - actualBalance) / actualBalance > 0.05) {
+                            finalQty = actualBalance; // Trust wallet if > 5% diff
                         }
 
-                    } catch (e) {
-                        // Ignore symbol errors
-                    }
+                        if (finalQty > 0.00001) {
+                            const avgPrice = totalQty > 0 ? totalCost / totalQty : 0;
+                            const investedValue = finalQty * avgPrice;
+
+                            // Only track if investment is at least $1
+                            if (investedValue >= 1.0) {
+                                userSymbols.set(symbol, {
+                                    symbol,
+                                    qty: finalQty,
+                                    avgPrice: avgPrice,
+                                    invested: investedValue,
+                                    currentPrice: 0,
+                                    unrealizedPL: 0,
+                                    unrealizedPLPercent: 0,
+                                    timestamp: Date.now()
+                                });
+                            }
+                        }
+                    } catch (e) { /* ignore */ }
                 }
             }
 
@@ -95,7 +107,6 @@ class PositionManager {
                 const priceMap = new Map();
                 prices.forEach(p => priceMap.set(p.symbol, parseFloat(p.price)));
 
-                // Update current prices and P&L for all calculated positions
                 userSymbols.forEach((pos, symbol) => {
                     if (priceMap.has(symbol)) {
                         pos.currentPrice = priceMap.get(symbol);
@@ -115,12 +126,11 @@ class PositionManager {
 
             const currentCache = userPositions.get(userId);
 
-            // Merge new data, preserving alert state if position still exists
             userSymbols.forEach((newData, symbol) => {
                 const oldData = currentCache.get(symbol);
                 const alertState = oldData ? oldData.alertState : {
                     lastAlertPrice: 0,
-                    lastAlertPLState: null // 'positive' or 'negative'
+                    lastAlertPLState: null
                 };
 
                 currentCache.set(symbol, {
@@ -129,7 +139,6 @@ class PositionManager {
                 });
             });
 
-            // Remove closed positions
             currentCache.forEach((val, key) => {
                 if (!userSymbols.has(key)) {
                     currentCache.delete(key);

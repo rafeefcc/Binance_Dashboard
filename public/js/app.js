@@ -1,5 +1,6 @@
 // Main application state
 let currentPeriod = 'all';
+let currentHistoryPeriod = 'all';
 let tradesData = [];
 let portfolioData = {};
 let priceUpdates = new Map();
@@ -13,6 +14,8 @@ document.addEventListener('DOMContentLoaded', () => {
     setupSorting();
     setupExport();
     setupPairSummary();
+    setupMonthlyPerformance();
+    setupHistoryFilters();
     // Data loading moved to auth success
 });
 
@@ -105,6 +108,7 @@ async function loadTradesData() {
         // Update all views
         displayOpenPositions();
         displayPairSummary();
+        displayMonthlyPerformance();
         displayTradeHistory();
     } catch (error) {
         console.error('Failed to load trades:', error);
@@ -131,6 +135,8 @@ async function loadPortfolioData() {
 
         portfolioData = await response.json();
         displayPortfolioMetrics();
+        // Force refresh monthly stats now that we have the global account value (denominator)
+        displayMonthlyPerformance();
     } catch (error) {
         console.error('Failed to load portfolio:', error);
     }
@@ -165,22 +171,22 @@ function displayOpenPositions() {
 
         return `
             <tr>
-                <td><strong>${trade.symbol}</strong></td>
-                <td>${trade.position.toFixed(8)}</td>
-                <td>$${formatNumber(investedAmount)}</td>
-                <td>$${formatNumber(trade.averageCost)}</td>
-                <td>$${formatNumber(currentPrice)}</td>
-                <td>-</td> <!-- Hide Realized P&L in this view -->
-                <td class="${plClass}">
+                <td data-label="Symbol"><strong>${trade.symbol}</strong></td>
+                <td data-label="Position">${trade.position.toFixed(8)}</td>
+                <td data-label="Invested USDT">$${formatNumber(investedAmount)}</td>
+                <td data-label="Avg Cost">$${formatNumber(trade.averageCost)}</td>
+                <td data-label="Current Price">$${formatNumber(currentPrice)}</td>
+                <td data-label="Realized P&L">-</td>
+                <td data-label="Unrealized P&L" class="${plClass}">
                     $${formatNumber(unrealizedPL)}
                 </td>
-                <td class="${plClass}">
+                <td data-label="Total P&L" class="${plClass}">
                     $${formatNumber(totalPL)}
                 </td>
-                <td class="${plClass}">
+                <td data-label="P&L %" class="${plClass}">
                     ${plPercentage >= 0 ? '+' : ''}${formatNumber(plPercentage)}%
                 </td>
-                <td>
+                <td data-label="Status">
                     <span class="status-badge ${statusClass}">OPEN</span>
                 </td>
             </tr>
@@ -233,6 +239,12 @@ function displayTradeHistory() {
     // Apply cutoff filter: 11/15/2025, 11:19:43 AM
     const cutoffTime = new Date('2025-11-15T11:19:43').getTime();
     allTrades = allTrades.filter(t => t.time >= cutoffTime);
+
+    // Apply 30-day filter if active
+    if (currentHistoryPeriod === '30d') {
+        const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+        allTrades = allTrades.filter(t => t.time >= thirtyDaysAgo);
+    }
 
     // 2. Sort by currentSort state
     allTrades.sort((a, b) => {
@@ -290,16 +302,16 @@ function displayTradeHistory() {
 
         return `
             <tr>
-                <td>${date}</td>
-                <td><strong>${t.symbol}</strong></td>
-                <td><span class="${sideClass}" style="font-weight:bold;">${sideLabel}</span></td>
-                <td>$${formatNumber(parseFloat(t.price), 4)}</td>
-                <td>${parseFloat(t.qty).toFixed(8).replace(/\.?0+$/, '')}</td>
-                <td>${netUSDT}</td>
-                <td>${netCoin}</td>
-                <td>${feeDisplay}</td>
-                <td class="${plClass}">${plDisplay}</td>
-                <td class="${plClass}">${plPercentDisplay}</td>
+                <td data-label="Date">${date}</td>
+                <td data-label="Pair"><strong>${t.symbol}</strong></td>
+                <td data-label="Side"><span class="${sideClass}" style="font-weight:bold;">${sideLabel}</span></td>
+                <td data-label="Price">$${formatNumber(parseFloat(t.price), 4)}</td>
+                <td data-label="Qty">${parseFloat(t.qty).toFixed(8).replace(/\.?0+$/, '')}</td>
+                <td data-label="Net USDT">${netUSDT}</td>
+                <td data-label="Net Coin">${netCoin}</td>
+                <td data-label="Fee">${feeDisplay}</td>
+                <td data-label="Realized P&L" class="${plClass}">${plDisplay}</td>
+                <td data-label="P&L %" class="${plClass}">${plPercentDisplay}</td>
             </tr>
         `;
     }).join('');
@@ -459,16 +471,16 @@ function displayPairSummary() {
 
         return `
             <tr>
-                <td><strong>${pair.symbol}</strong></td>
-                <td>${pair.totalTrades}</td>
-                <td>${pair.buys}</td>
-                <td>${pair.sells}</td>
-                <td>$${formatNumber(pair.totalVolume)}</td>
-                <td>$${formatNumber(pair.avgBuyPrice)}</td>
-                <td>$${formatNumber(pair.avgSellPrice)}</td>
-                <td class="${plClass}">$${formatNumber(pair.totalRealizedPL)}</td>
-                <td class="${avgPLClass}">$${formatNumber(pair.avgPLPerTrade)}</td>
-                <td class="${winRateClass}">${formatNumber(pair.winRate)}%</td>
+                <td data-label="Pair"><strong>${pair.symbol}</strong></td>
+                <td data-label="Total Trades">${pair.totalTrades}</td>
+                <td data-label="Buys">${pair.buys}</td>
+                <td data-label="Sells">${pair.sells}</td>
+                <td data-label="Volume (USDT)">$${formatNumber(pair.totalVolume)}</td>
+                <td data-label="Avg Buy Price">$${formatNumber(pair.avgBuyPrice)}</td>
+                <td data-label="Avg Sell Price">$${formatNumber(pair.avgSellPrice)}</td>
+                <td data-label="Realized P&L" class="${plClass}">$${formatNumber(pair.totalRealizedPL)}</td>
+                <td data-label="Avg P&L" class="${avgPLClass}">$${formatNumber(pair.avgPLPerTrade)}</td>
+                <td data-label="Win Rate" class="${winRateClass}">${formatNumber(pair.winRate)}%</td>
             </tr>
         `;
     }).join('');
@@ -554,6 +566,200 @@ function exportToCSV() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+}
+
+// Setup Monthly Performance Summary Toggle
+function setupMonthlyPerformance() {
+    const toggleBtn = document.getElementById('toggleMonthlyBtn');
+    const container = document.getElementById('monthlySummaryContainer');
+
+    if (toggleBtn && container) {
+        toggleBtn.addEventListener('click', () => {
+            if (container.style.display === 'none') {
+                container.style.display = 'block';
+                toggleBtn.textContent = '▼ Collapse';
+            } else {
+                container.style.display = 'none';
+                toggleBtn.textContent = '▶ Expand';
+            }
+        });
+    }
+}
+
+// Display Monthly Performance Summary
+// Display Monthly Performance Summary
+function displayMonthlyPerformance() {
+    const tbody = document.getElementById('monthlySummaryBody');
+    if (!tbody) return;
+
+    const cutoffTime = new Date('2025-11-15T11:19:43').getTime();
+    const now = Date.now();
+    const totalAccountValue = portfolioData.totalAssetValue || 0;
+
+    console.log('[Exposure DEBUG] Starting calculation', {
+        totalAccountValue,
+        tradesCount: tradesData.length,
+        currentTime: new Date(now).toLocaleString()
+    });
+
+    // 1. Reconstruct Global Investment Timeline
+    // Collect all trades from all symbols and sort by time
+    const allTradesSorted = tradesData.flatMap(symbolData =>
+        symbolData.trades.map(t => ({ ...t, symbol: symbolData.symbol }))
+    ).sort((a, b) => a.time - b.time);
+
+    const monthlyStats = {};
+    const symbolStates = {}; // symbol -> { qty, avgPrice }
+
+    let lastTime = cutoffTime;
+    let currentTotalInvestment = 0;
+
+    // Helper to add integral to months
+    const addInvestmentIntegral = (startTime, endTime, value) => {
+        if (endTime <= startTime || value < 0) return;
+
+        let t = startTime;
+        while (t < endTime) {
+            const date = new Date(t);
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+            const nextMonth = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+            const chunkEnd = Math.min(endTime, nextMonth.getTime());
+            const duration = chunkEnd - t;
+
+            if (!monthlyStats[monthKey]) {
+                const mStart = new Date(date.getFullYear(), date.getMonth(), 1).getTime();
+                const mEnd = nextMonth.getTime();
+
+                const effectiveMonthStart = Math.max(mStart, cutoffTime);
+                const effectiveMonthEnd = Math.min(mEnd, now);
+
+                monthlyStats[monthKey] = {
+                    display: date.toLocaleString('default', { month: 'long', year: 'numeric' }),
+                    totalTrades: 0,
+                    sells: 0,
+                    volume: 0,
+                    realizedPL: 0,
+                    wins: 0,
+                    investmentIntegral: 0,
+                    totalDuration: Math.max(1, effectiveMonthEnd - effectiveMonthStart)
+                };
+            }
+
+            monthlyStats[monthKey].investmentIntegral += (value * duration);
+            t = chunkEnd;
+        }
+    };
+
+    // Process Timeline
+    allTradesSorted.forEach(t => {
+        if (t.time < cutoffTime || t.time > now) return;
+
+        // 1. Add integral for the period BEFORE this trade
+        addInvestmentIntegral(lastTime, t.time, currentTotalInvestment);
+
+        // 2. Update symbol state
+        if (!symbolStates[t.symbol]) symbolStates[t.symbol] = { qty: 0, avgPrice: 0 };
+        const state = symbolStates[t.symbol];
+
+        const tradeQty = parseFloat(t.qty);
+        const tradePrice = parseFloat(t.price);
+
+        if (t.isBuyer) {
+            const oldCost = state.qty * state.avgPrice;
+            const newCost = tradeQty * tradePrice;
+            state.qty += tradeQty;
+            state.avgPrice = state.qty > 0 ? (oldCost + newCost) / state.qty : 0;
+        } else {
+            state.qty = Math.max(0, state.qty - tradeQty);
+            if (state.qty <= 0.00000001) {
+                state.qty = 0;
+                state.avgPrice = 0;
+            }
+        }
+
+        // Update trade-specific performance stats
+        const date = new Date(t.time);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (!monthlyStats[monthKey]) addInvestmentIntegral(t.time, t.time + 1, 0); // Init month
+
+        const stats = monthlyStats[monthKey];
+        stats.totalTrades++;
+        stats.volume += (tradePrice * tradeQty);
+        if (!t.isBuyer) {
+            stats.sells++;
+            const pl = t.tradePL || 0;
+            stats.realizedPL += pl;
+            if (pl > 0) stats.wins++;
+        }
+
+        // Recalculate global investment value
+        currentTotalInvestment = Object.values(symbolStates).reduce((sum, s) => sum + (s.qty * s.avgPrice), 0);
+        lastTime = t.time;
+    });
+
+    // Add trailing integral to current moment
+    addInvestmentIntegral(lastTime, now, currentTotalInvestment);
+
+    // Final check for denominator (Fallback to totalInvested if account value is missing)
+    const effectiveTotalFund = totalAccountValue > 0 ? totalAccountValue : (portfolioData.totalInvested || 0);
+
+    // Convert to sorted array
+    const sortedMonths = Object.keys(monthlyStats)
+        .sort((a, b) => b.localeCompare(a))
+        .map(key => {
+            const m = monthlyStats[key];
+            const avgInvestment = m.investmentIntegral / m.totalDuration;
+            // Exposure % = Average Investment / Total Assets
+            const exposurePercent = effectiveTotalFund > 0 ? (avgInvestment / effectiveTotalFund) * 100 : 0;
+
+            console.log(`[Exposure DEBUG] ${key}:`, {
+                avgInvestment,
+                totalFund: effectiveTotalFund,
+                exposurePercent
+            });
+
+            return {
+                ...m,
+                exposurePercent
+            };
+        });
+
+    if (sortedMonths.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="loading-cell">No trading data available for monthly summary.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = sortedMonths.map(m => {
+        const plClass = m.realizedPL >= 0 ? 'pl-positive' : 'pl-negative';
+        const winRate = m.sells > 0 ? (m.wins / m.sells) * 100 : 0;
+        const winRateClass = winRate >= 50 ? 'pl-positive' : 'pl-negative';
+
+        return `
+            <tr>
+                <td data-label="Month"><strong>${m.display}</strong></td>
+                <td data-label="Total Trades">${m.totalTrades}</td>
+                <td data-label="Sells">${m.sells}</td>
+                <td data-label="Volume (USDT)">$${formatNumber(m.volume)}</td>
+                <td data-label="Realized P&L" class="${plClass}">$${formatNumber(m.realizedPL)}</td>
+                <td data-label="Win Rate" class="${winRateClass}">${formatNumber(winRate)}%</td>
+                <td data-label="Exposure %" class="metric-value">${formatNumber(m.exposurePercent)}%</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Setup History Time Filters
+function setupHistoryFilters() {
+    const buttons = document.querySelectorAll('#historyTimeFilter .filter-btn');
+    buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentHistoryPeriod = btn.dataset.historyPeriod;
+            buttons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            displayTradeHistory();
+        });
+    });
 }
 
 // Connect to WebSocket for live price updates

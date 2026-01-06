@@ -123,12 +123,12 @@ function displayScanResults() {
 
         return `
             <tr>
-                <td>${index + 1}</td>
-                <td><strong>${result.symbol}</strong></td>
-                <td>$${formatNumber(result.bidVolume)}</td>
-                <td>$${formatNumber(result.askVolume)}</td>
-                <td class="${inflowClass}">$${formatNumber(result.netInflow)}</td>
-                <td>${trend}</td>
+                <td data-label="#">${index + 1}</td>
+                <td data-label="Symbol"><strong>${result.symbol}</strong></td>
+                <td data-label="Bid Volume">$${formatNumber(result.bidVolume)}</td>
+                <td data-label="Ask Volume">$${formatNumber(result.askVolume)}</td>
+                <td data-label="Net Inflow" class="${inflowClass}">$${formatNumber(result.netInflow)}</td>
+                <td data-label="Trend">${trend}</td>
             </tr>
         `;
     }).join('');

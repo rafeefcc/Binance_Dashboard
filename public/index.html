@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
     <title>Binance Trading Dashboard</title>
     <meta name="description" content="Real-time Binance trading dashboard with P&L tracking and market monitoring">
     <link rel="stylesheet" href="/css/styles.css">
@@ -153,6 +154,38 @@
 
             <!-- History Tab -->
             <div class="tab-pane" id="history-tab">
+                <!-- Monthly Performance Summary -->
+                <div class="trades-container" style="margin-bottom: 2rem;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h2>📅 Monthly Performance Summary</h2>
+                        <button id="toggleMonthlyBtn" class="refresh-btn"
+                            style="background: var(--card-bg); border: 1px solid var(--border-color);">
+                            ▼ Collapse
+                        </button>
+                    </div>
+                    <div id="monthlySummaryContainer" class="table-container">
+                        <table class="trades-table" id="monthlySummaryTable">
+                            <thead>
+                                <tr>
+                                    <th>Month</th>
+                                    <th>Total Trades</th>
+                                    <th>Sells</th>
+                                    <th>Volume (USDT)</th>
+                                    <th>Realized P&L</th>
+                                    <th>Win Rate</th>
+                                    <th>Exposure %</th>
+                                </tr>
+                            </thead>
+                            <tbody id="monthlySummaryBody">
+                                <tr>
+                                    <td colspan="7" class="loading-cell">Calculating monthly stats...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <!-- Pair Performance Summary -->
                 <div class="trades-container" style="margin-bottom: 2rem;">
                     <div
@@ -188,19 +221,25 @@
                     </div>
                 </div>
 
-                <!-- Detailed Trade History -->
                 <div class="trades-container">
                     <div
-                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem;">
                         <h2>Executed Trade History</h2>
-                        <div style="display: flex; gap: 1rem; align-items: center;">
+                        <div class="history-controls"
+                            style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                            <div class="time-filter" id="historyTimeFilter">
+                                <button class="filter-btn active" data-history-period="all">All</button>
+                                <button class="filter-btn" data-history-period="30d">30 Days</button>
+                            </div>
                             <button id="exportCsvBtn" class="refresh-btn"
                                 style="background: var(--card-bg); border: 1px solid var(--border-color);">
                                 ⬇️ Export CSV
                             </button>
-                            <div id="historySummary" style="font-size: 1.1rem; font-weight: 600;">
-                                Total Realized P&L: <span id="historyTotalPL" class="metric-value">$0.00</span>
-                            </div>
+                        </div>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 1rem;">
+                        <div id="historySummary" style="font-size: 1.1rem; font-weight: 600;">
+                            Total Realized P&L: <span id="historyTotalPL" class="metric-value">$0.00</span>
                         </div>
                     </div>
                     <div class="table-container">

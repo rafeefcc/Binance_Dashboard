@@ -54,7 +54,11 @@ body::before {
 .login-container {
     position: relative;
     z-index: 1;
-    padding: 2rem;
+    padding: 1.5rem;
+    /* Reduced padding for mobile */
+    width: 100%;
+    display: flex;
+    justify-content: center;
 }
 
 .login-card {
@@ -62,11 +66,23 @@ body::before {
     backdrop-filter: blur(20px);
     border: 1px solid var(--border);
     border-radius: 24px;
-    padding: 3rem;
+    padding: 2.5rem;
+    width: 100%;
     max-width: 480px;
     box-shadow: var(--shadow);
     animation: fadeInUp 0.6s ease-out;
 }
+
+@media (max-width: 480px) {
+    .login-card {
+        padding: 1.5rem;
+    }
+
+    .login-header h1 {
+        font-size: 1.5rem;
+    }
+}
+
 
 .login-header h1 {
     font-size: 2rem;
@@ -678,42 +694,268 @@ tbody tr:hover {
 }
 
 /* ============ Responsive Design ============ */
+/* ============ Mobile Optimization (iPhone 16 & General Mobile) ============ */
 @media (max-width: 768px) {
+    :root {
+        --header-height: 60px;
+        --nav-height: 70px;
+    }
+
+    body {
+        padding-top: var(--header-height);
+        padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
+    }
+
+    /* Keep app container from being too wide and add safe area padding */
     .app-container {
+        padding: 1rem;
+        max-width: 100vw;
+        overflow-x: hidden;
+    }
+
+    /* Fixed Header for Mobile */
+    .app-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: var(--header-height);
+        margin-bottom: 0;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+        border-top: none;
+        padding: 0.5rem 1rem;
+        z-index: 1001;
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .header-left h1 {
+        font-size: 1.25rem;
+    }
+
+    .header-right {
+        gap: 0.5rem;
+    }
+
+    .user-profile {
+        padding: 0.25rem 0.5rem;
+    }
+
+    .user-avatar {
+        width: 24px;
+        height: 24px;
+    }
+
+    #userName {
+        display: none;
+        /* Hide name on mobile to save space */
+    }
+
+    .logout-btn {
+        padding: 0.25rem 0.75rem;
+        font-size: 0.8rem;
+    }
+
+    /* Bottom Navigation Bar */
+    .tab-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: calc(var(--nav-height) + env(safe-area-inset-bottom));
+        padding: 0.5rem 1rem calc(0.5rem + env(safe-area-inset-bottom)) 1rem;
+        margin-bottom: 0;
+        background: var(--bg-card);
+        backdrop-filter: blur(30px);
+        border-top: 1px solid var(--border);
+        border-radius: 0;
+        flex-direction: row;
+        justify-content: space-around;
+        z-index: 1000;
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .tab-btn {
+        flex: 1;
+        flex-direction: column;
+        gap: 0.25rem;
+        padding: 0.5rem 0;
+        background: transparent;
+        border: none;
+        font-size: 0.7rem;
+        border-radius: 12px;
+    }
+
+    .tab-btn span {
+        font-size: 1.5rem;
+    }
+
+    .tab-btn:hover {
+        background: transparent;
+        border-color: transparent;
+    }
+
+    .tab-btn.active {
+        background: rgba(99, 102, 241, 0.1);
+        color: var(--primary);
+        border-color: transparent;
+    }
+
+    /* Metrics Grid - 2 columns on mobile */
+    .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .metric-card {
         padding: 1rem;
     }
 
-    .app-header {
-        flex-direction: column;
-        gap: 1rem;
+    .metric-value {
+        font-size: 1.25rem;
     }
 
-    .tab-nav {
-        flex-direction: column;
+    .metric-label {
+        font-size: 0.7rem;
     }
 
-    .metrics-grid {
-        grid-template-columns: 1fr;
-    }
-
+    /* Controls Bar */
     .controls-bar {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .time-filter {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .filter-btn {
+        flex: 1;
+        padding: 0.5rem 0.25rem;
+        font-size: 0.8rem;
+        text-align: center;
+    }
+
+    /* Table to Card Transformation */
+    .table-container {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        overflow: visible;
+        max-height: none;
+    }
+
+    table,
+    thead,
+    tbody,
+    th,
+    td,
+    tr {
+        display: block;
+    }
+
+    thead tr {
+        position: absolute;
+        top: -9999px;
+        left: -9999px;
+    }
+
+    tbody tr {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        margin-bottom: 1rem;
+        padding: 1rem;
+        box-shadow: var(--shadow);
+    }
+
+    td {
+        border: none;
+        padding: 0.5rem 0;
+        position: relative;
+        padding-left: 50%;
+        text-align: right;
+        font-size: 0.9rem;
+    }
+
+    td::before {
+        content: attr(data-label);
+        position: absolute;
+        left: 0;
+        width: 45%;
+        padding-right: 10px;
+        white-space: nowrap;
+        text-align: left;
+        font-weight: 600;
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+    }
+
+    /* Special styling for common table cells */
+    td:first-child {
+        padding-left: 0;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.75rem;
+        font-size: 1.1rem;
+    }
+
+    td:first-child::before {
+        display: none;
+    }
+
+    td:last-child {
+        padding-bottom: 0;
+    }
+
+    /* History and Scanner specific table cell mapping via JS or CSS */
+    /* We'll use JS to add data-label attributes shortly */
+
+    /* Scanner Tab Adjustments */
+    .scanner-header {
         flex-direction: column;
-        gap: 1rem;
+        align-items: flex-start;
+        gap: 0.5rem;
     }
 
     .config-row {
         flex-direction: column;
+        gap: 0.75rem;
     }
 
-    table {
-        font-size: 0.875rem;
+    /* Settings Adjustments */
+    .settings-section {
+        padding: 1.5rem;
     }
 
-    th,
-    td {
-        padding: 0.75rem 0.5rem;
+    .save-settings-btn {
+        width: 100%;
+    }
+
+    /* Header sizes */
+    .trades-container h2,
+    .scanner-header h2,
+    .settings-container h2 {
+        font-size: 1.25rem;
+        margin-bottom: 0.75rem;
     }
 }
+
+@media (max-width: 400px) {
+    .metrics-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 
 /* ============ Scrollbar ============ */
 ::-webkit-scrollbar {

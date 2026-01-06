@@ -126,6 +126,29 @@ async function getKlines(symbol, interval, limit = 100) {
     return await publicRequest('/api/v3/klines', { symbol, interval, limit });
 }
 
+// Get user assets (including Funding, Spot, etc. across the account)
+async function getUserAssets(userId) {
+    try {
+        // This is a POST request in Binance API for User Asset
+        const { apiKey, apiSecret } = getApiKeys(userId);
+        if (!apiKey || !apiSecret) return [];
+
+        const params = { timestamp: Date.now() };
+        const queryString = `timestamp=${params.timestamp}`;
+        const signature = generateSignature(queryString, apiSecret);
+
+        const url = `${BINANCE_BASE_URL}/sapi/v3/asset/getUserAsset?${queryString}&signature=${signature}`;
+
+        const response = await axios.post(url, {}, {
+            headers: { 'X-MBX-APIKEY': apiKey }
+        });
+        return response.data;
+    } catch (error) {
+        console.error('[Binance API] Error fetching User Assets:', error.message);
+        return [];
+    }
+}
+
 module.exports = {
     getAccountInfo,
     getTrades,
@@ -137,5 +160,6 @@ module.exports = {
     getExchangeInfo,
     getApiKeys,
     getKlines,
+    getUserAssets,
     publicRequest
 };
