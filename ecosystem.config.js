@@ -1,10 +1,11 @@
 module.exports = {
   apps: [{
     name: 'binance-dashboard',
-    script: 'npm',
-    args: 'start --loglevel verbose',
+    script: 'server/index.js',
+    args: '',
     cwd: '/opt/Binance_Dashboard',
     instances: 1,
+    exec_mode: 'fork',
     autorestart: true,
     watch: false,  // Set to true if you want PM2 to restart on file changes
     max_memory_restart: '512M',

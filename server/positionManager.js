@@ -158,6 +158,9 @@ class PositionManager {
                 }
             });
         });
+
+        // Debug log (small chance to avoid spam)
+        if (Math.random() < 0.01) console.log(`📡 [PositionManager] Processing ${tickers.length} tickers for ${userPositions.size} users`);
     }
 
     async checkAlerts(userId, pos) {

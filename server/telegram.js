@@ -256,6 +256,11 @@ Just type any trading pair (e.g., BTCUSDT, ETHUSDT) to get instant analysis!
 
         await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'HTML' });
     });
+
+    // /ping command
+    bot.onText(/\/ping/, async (msg) => {
+        await bot.sendMessage(msg.chat.id, '🏓 <b>Pong!</b> Bot is online and connected.', { parse_mode: 'HTML' });
+    });
 }
 
 // Send message to Telegram for a specific user
@@ -281,6 +286,7 @@ async function sendMessage(userId, message) {
 
     try {
         await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+        console.log(`📡 [Telegram] Message sent to chatId ${chatId}`);
         return true;
     } catch (error) {
         console.error('Failed to send Telegram message:', error.message);

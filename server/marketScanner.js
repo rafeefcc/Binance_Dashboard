@@ -1,5 +1,6 @@
 const { getOrderBook, get24hrTicker, getExchangeInfo } = require('./binance');
 const { sendMarketAlert } = require('./telegram');
+const { getAllUsersWithTelegram } = require('./database');
 
 // Store previous inflow data for comparison
 const previousInflowData = new Map();
@@ -91,21 +92,26 @@ async function scanMarkets(limit = 20) {
         const topResults = results.slice(0, limit);
 
         // Check for surges and send alerts
-        for (const result of topResults.slice(0, 5)) { // Check top 5
+        for (const result of topResults.slice(0, 10)) { // Check top 10
             const previous = previousInflowData.get(result.symbol);
 
             if (previous) {
                 const change = ((result.netInflow - previous.netInflow) / Math.abs(previous.netInflow)) * 100;
+                console.log(`🔍 [Scanner] ${result.symbol}: Change ${change.toFixed(2)}%, Current Inflow: ${result.netInflow.toFixed(2)}`);
 
-                // Alert if inflow increased by more than 50%
-                if (change > 50 && result.netInflow > 10000) {
-                    await sendMarketAlert(result.symbol, result.netInflow, change);
+                // Alert if inflow increased by more than 10% (was 50%)
+                if (change > 10 && result.netInflow > 5000) {
+                    console.log(`🚀 Surge detected for ${result.symbol}: Inflow ${result.netInflow}, Change ${change.toFixed(2)}%`);
+                    const users = getAllUsersWithTelegram();
+                    for (const user of users) {
+                        await sendMarketAlert(user.user_id, result.symbol, result.netInflow, change);
+                    }
                 }
             }
-
-            // Store current data for next comparison
-            previousInflowData.set(result.symbol, result);
         }
+
+        // Store all data for future comparison
+        results.forEach(result => previousInflowData.set(result.symbol, result));
 
         console.log(`✅ Scan complete. Top coin: ${topResults[0]?.symbol} with ${topResults[0]?.netInflow.toFixed(2)} USDT inflow`);
 
