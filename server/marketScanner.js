@@ -1,13 +1,19 @@
-const { getOrderBook, get24hrTicker, getExchangeInfo } = require('./binance');
+const { getTickerPrice, getExchangeInfo } = require('./binance');
 const { sendMarketAlert } = require('./telegram');
 const { getAllUsersWithTelegram } = require('./database');
 
-// Store previous inflow data for comparison
-const previousInflowData = new Map();
+// Store price history for comparison
+// Structure: Map<symbol, [{price, timestamp}, ...]>
+const priceHistory = new Map();
+const HISTORY_LIMIT_MS = 25 * 60 * 1000; // Keep 25 minutes of history
+const ALERT_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes cooldown per symbol
+
+const cooldowns = new Map(); // symbol -> lastAlertTime
+
 let allSymbols = [];
 let isScanning = false;
 
-// Initialize scanner - get all USDT trading pairs
+// Initialize scanner - get all USDT/FDUSD trading pairs
 async function initializeScanner() {
     try {
         const exchangeInfo = await getExchangeInfo();
@@ -24,102 +30,92 @@ async function initializeScanner() {
     }
 }
 
-// Calculate net inflow for a symbol
-async function calculateInflow(symbol) {
-    try {
-        const orderBook = await getOrderBook(symbol, 100);
-
-        // Calculate bid volume (buy pressure)
-        const bidVolume = orderBook.bids.reduce((sum, [price, qty]) => {
-            return sum + (parseFloat(price) * parseFloat(qty));
-        }, 0);
-
-        // Calculate ask volume (sell pressure)
-        const askVolume = orderBook.asks.reduce((sum, [price, qty]) => {
-            return sum + (parseFloat(price) * parseFloat(qty));
-        }, 0);
-
-        // Net inflow = bid volume - ask volume
-        const netInflow = bidVolume - askVolume;
-
-        return {
-            symbol,
-            bidVolume,
-            askVolume,
-            netInflow,
-            timestamp: Date.now()
-        };
-    } catch (error) {
-        // Skip symbols that fail (might be delisted or have issues)
-        return null;
-    }
-}
-
-// Scan all markets and return top coins by inflow
-async function scanMarkets(limit = 20) {
+// Scan all markets and return coins with price surges
+async function scanMarkets() {
     if (allSymbols.length === 0) {
         await initializeScanner();
     }
 
     if (isScanning) {
-        console.log('⏳ Scan already in progress, skipping...');
         return [];
     }
 
     isScanning = true;
-    console.log('🔍 Starting market scan...');
+    const now = Date.now();
 
     try {
-        // Calculate inflow for all symbols (in batches to avoid rate limits)
-        const batchSize = 10;
-        const results = [];
+        // Get current prices for all symbols in one call
+        const tickers = await getTickerPrice();
+        const tickerMap = new Map();
+        tickers.forEach(t => tickerMap.set(t.symbol, parseFloat(t.price)));
 
-        for (let i = 0; i < allSymbols.length; i += batchSize) {
-            const batch = allSymbols.slice(i, i + batchSize);
-            const batchPromises = batch.map(symbol => calculateInflow(symbol));
-            const batchResults = await Promise.all(batchPromises);
-            results.push(...batchResults.filter(r => r !== null));
+        const alertResults = [];
 
-            // Small delay between batches
-            if (i + batchSize < allSymbols.length) {
-                await new Promise(resolve => setTimeout(resolve, 100));
+        // Update history and check for alerts for each managed symbol
+        allSymbols.forEach(symbol => {
+            const currentPrice = tickerMap.get(symbol);
+            if (!currentPrice) return;
+
+            if (!priceHistory.has(symbol)) {
+                priceHistory.set(symbol, []);
             }
-        }
 
-        // Sort by net inflow (highest first)
-        results.sort((a, b) => b.netInflow - a.netInflow);
+            const history = priceHistory.get(symbol);
 
-        // Get top results
-        const topResults = results.slice(0, limit);
+            // 1. Check for alerts BEFORE adding new price to history
+            // We look for a price point from ~15-20 minutes ago
+            const targetTime = now - (15 * 60 * 1000); // 15 mins ago
 
-        // Check for surges and send alerts
-        for (const result of topResults.slice(0, 10)) { // Check top 10
-            const previous = previousInflowData.get(result.symbol);
+            // Find the oldest price in the window [targetTime - 6mins, targetTime]
+            // This ensures we compare against a stable baseline from about 15-20 mins ago
+            const baseline = history.find(h => h.timestamp <= targetTime && h.timestamp > targetTime - (10 * 60 * 1000));
 
-            if (previous) {
-                const change = ((result.netInflow - previous.netInflow) / Math.abs(previous.netInflow)) * 100;
-                console.log(`🔍 [Scanner] ${result.symbol}: Change ${change.toFixed(2)}%, Current Inflow: ${result.netInflow.toFixed(2)}`);
+            if (baseline) {
+                const percentChange = ((currentPrice - baseline.price) / baseline.price) * 100;
+                const timeDiffMins = Math.round((now - baseline.timestamp) / 60000);
 
-                // Alert if inflow increased by more than 10% (was 50%)
-                if (change > 10 && result.netInflow > 5000) {
-                    console.log(`🚀 Surge detected for ${result.symbol}: Inflow ${result.netInflow}, Change ${change.toFixed(2)}%`);
-                    const users = getAllUsersWithTelegram();
-                    for (const user of users) {
-                        await sendMarketAlert(user.user_id, result.symbol, result.netInflow, change);
+                // Alert if price increased by more than 1%
+                if (percentChange >= 1.0) {
+                    // Check cooldown
+                    const lastAlert = cooldowns.get(symbol) || 0;
+                    if (now - lastAlert > ALERT_COOLDOWN_MS) {
+                        console.log(`🚀 [Price Surge] ${symbol}: +${percentChange.toFixed(2)}% in ${timeDiffMins}m ($${baseline.price} -> $${currentPrice})`);
+
+                        cooldowns.set(symbol, now);
+
+                        alertResults.push({
+                            symbol,
+                            oldPrice: baseline.price,
+                            newPrice: currentPrice,
+                            percentChange,
+                            timeWindow: timeDiffMins
+                        });
+
+                        // Send alerts to all configured users
+                        const users = getAllUsersWithTelegram();
+                        users.forEach(user => {
+                            sendMarketAlert(user.user_id, symbol, baseline.price, currentPrice, percentChange, timeDiffMins);
+                        });
                     }
                 }
             }
-        }
 
-        // Store all data for future comparison
-        results.forEach(result => previousInflowData.set(result.symbol, result));
+            // 2. Add current price to history
+            history.push({ price: currentPrice, timestamp: now });
 
-        console.log(`✅ Scan complete. Top coin: ${topResults[0]?.symbol} with ${topResults[0]?.netInflow.toFixed(2)} USDT inflow`);
+            // 3. Clean up old history
+            const cutoff = now - HISTORY_LIMIT_MS;
+            while (history.length > 0 && history[0].timestamp < cutoff) {
+                history.shift();
+            }
+        });
+
+        console.log(`✅ Price scan complete. Checked ${allSymbols.length} pairs.`);
 
         isScanning = false;
-        return topResults;
+        return alertResults;
     } catch (error) {
-        console.error('Market scan error:', error.message);
+        console.error('Market price scan error:', error.message);
         isScanning = false;
         return [];
     }
@@ -127,9 +123,9 @@ async function scanMarkets(limit = 20) {
 
 // Start periodic scanning
 function startPeriodicScan(intervalMinutes = 5) {
-    console.log(`⏰ Starting periodic market scan every ${intervalMinutes} minutes`);
+    console.log(`⏰ Starting periodic price scan every ${intervalMinutes} minutes`);
 
-    // Initial scan
+    // Initial scan to build baseline
     scanMarkets();
 
     // Periodic scans

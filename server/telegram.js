@@ -299,28 +299,28 @@ async function sendMessage(userId, message) {
 }
 
 // Send market surge alert for a specific user
-async function sendMarketAlert(userId, symbol, inflow, percentChange) {
+async function sendMarketAlert(userId, symbol, oldPrice, newPrice, percentChange, timeWindow = 15) {
     const config = getTelegramConfig(userId);
     const chatId = config.chatId;
 
     if (!chatId) {
-        // console.log(`Telegram chat ID not configured for user ${userId}, skipping alert`);
         return false;
     }
 
     const message = `
-🚀 <b>Market Surge Alert!</b>
+🚀 <b>Price Surge Alert!</b>
 
 <b>Symbol:</b> ${symbol}
-<b>Net Inflow:</b> ${inflow.toFixed(2)} USDT
-<b>Change:</b> ${percentChange > 0 ? '+' : ''}${percentChange.toFixed(2)}%
+<b>Price:</b> $${newPrice.toFixed(4)}
+<b>Change:</b> +${percentChange.toFixed(2)}%
+<b>Timeframe:</b> Last ${timeWindow} min
 
-High buying pressure detected in the last 5 minutes!
+Significant price increase detected!
     `.trim();
 
     try {
         await sendMessage(userId, message);
-        console.log(`✅ Sent alert for ${symbol} to user ${userId}`);
+        console.log(`✅ Sent price alert for ${symbol} to user ${userId}`);
         return true;
     } catch (error) {
         console.error(`❌ Failed to send alert for ${symbol} to user ${userId}:`, error.message);
