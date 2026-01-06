@@ -131,7 +131,7 @@ router.get('/api/trades/all', ensureAuthenticated, async (req, res) => {
         for (const symbol of symbols) {
             try {
                 console.log(`[API] Fetching trades for ${symbol}`);
-                const trades = await getTrades(symbol, 100, req.user.id);
+                const trades = await getTrades(symbol, 1000, req.user.id);
                 console.log(`[API] ${symbol}: Found ${trades.length} trades`);
                 allTrades.push(...trades.map(t => ({ ...t, symbol })));
             } catch (error) {

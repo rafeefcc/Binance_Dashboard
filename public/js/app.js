@@ -230,6 +230,10 @@ function displayTradeHistory() {
     // 1. Flatten all trades from all symbols
     let allTrades = tradesData.flatMap(symbolData => symbolData.trades);
 
+    // Apply cutoff filter: 11/15/2025, 11:19:43 AM
+    const cutoffTime = new Date('2025-11-15T11:19:43').getTime();
+    allTrades = allTrades.filter(t => t.time >= cutoffTime);
+
     // 2. Sort by currentSort state
     allTrades.sort((a, b) => {
         let valA = a[currentSort.column];
@@ -289,8 +293,8 @@ function displayTradeHistory() {
                 <td>${date}</td>
                 <td><strong>${t.symbol}</strong></td>
                 <td><span class="${sideClass}" style="font-weight:bold;">${sideLabel}</span></td>
-                <td>$${formatNumber(parseFloat(t.price))}</td>
-                <td>${formatNumber(parseFloat(t.qty))}</td>
+                <td>$${formatNumber(parseFloat(t.price), 4)}</td>
+                <td>${parseFloat(t.qty).toFixed(8).replace(/\.?0+$/, '')}</td>
                 <td>${netUSDT}</td>
                 <td>${netCoin}</td>
                 <td>${feeDisplay}</td>
@@ -385,7 +389,8 @@ function displayPairSummary() {
 
     tradesData.forEach(symbolData => {
         const symbol = symbolData.symbol;
-        const trades = symbolData.trades;
+        const cutoffTime = new Date('2025-11-15T11:19:43').getTime();
+        const trades = symbolData.trades.filter(t => t.time >= cutoffTime);
 
         if (!pairStats[symbol]) {
             pairStats[symbol] = {
@@ -481,6 +486,11 @@ function setupExport() {
 function exportToCSV() {
     // Flatten trades
     let allTrades = tradesData.flatMap(symbolData => symbolData.trades);
+
+    // Apply cutoff filter: 11/15/2025, 11:19:43 AM
+    const cutoffTime = new Date('2025-11-15T11:19:43').getTime();
+    allTrades = allTrades.filter(t => t.time >= cutoffTime);
+
     allTrades.sort((a, b) => b.time - a.time);
 
     if (allTrades.length === 0) {
@@ -588,6 +598,18 @@ function connectWebSocket() {
 }
 
 // Format number with commas
-function formatNumber(num) {
-    return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+// Format number with commas and configurable decimals
+function formatNumber(num, decimals = 2) {
+    if (num === 0) return '0.00';
+    if (!num) return '-';
+
+    // For very small numbers, show more decimals
+    if (Math.abs(num) < 1 && decimals === 2) {
+        decimals = 6;
+    }
+
+    return num.toLocaleString(undefined, {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+    });
 }
