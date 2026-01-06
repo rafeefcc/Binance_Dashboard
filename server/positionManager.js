@@ -18,66 +18,74 @@ class PositionManager {
     async updatePositions(userId) {
         try {
             // Fetch account info to find active assets
-            const { getAccountInfo } = require('./binance');
+            const { getAccountInfo, getExchangeInfo } = require('./binance');
             const accountInfo = await getAccountInfo(userId);
+            const exchangeInfo = await getExchangeInfo();
+            const validQuoteAssets = ['USDT', 'FDUSD'];
 
             const balances = accountInfo.balances.filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
             const userSymbols = new Map(); // symbol -> position details
 
             for (const bal of balances) {
-                if (bal.asset === 'USDT') continue;
+                if (validQuoteAssets.includes(bal.asset)) continue;
 
-                const symbol = `${bal.asset}USDT`;
-                try {
-                    const trades = await getTrades(symbol, 500, userId);
-                    if (!trades || trades.length === 0) continue;
+                // Find all symbols where this asset is the base and quote is USDT or FDUSD
+                const pairs = exchangeInfo.symbols
+                    .filter(s => s.baseAsset === bal.asset && validQuoteAssets.includes(s.quoteAsset))
+                    .map(s => s.symbol);
 
-                    // Calculate WACB (same logic as routes.js)
-                    let totalQty = 0;
-                    let totalCost = 0;
-                    let realizedPL = 0;
+                for (const symbol of pairs) {
+                    try {
+                        const trades = await getTrades(symbol, 500, userId);
+                        if (!trades || trades.length === 0) continue;
 
-                    for (const trade of trades) {
-                        const price = parseFloat(trade.price);
-                        const qty = parseFloat(trade.qty);
-                        const fee = parseFloat(trade.commission || 0); // Simplified fee
-                        const isBuyer = trade.isBuyer;
+                        // Calculate WACB (same logic as routes.js)
+                        let totalQty = 0;
+                        let totalCost = 0;
+                        let realizedPL = 0;
 
-                        if (isBuyer) {
-                            totalQty += qty;
-                            totalCost += (price * qty);
-                        } else {
-                            // Sell
-                            if (totalQty > 0) {
-                                const avgBuyPrice = totalCost / totalQty;
-                                const costBasis = avgBuyPrice * qty;
-                                const sellValue = price * qty;
-                                realizedPL += (sellValue - costBasis);
+                        for (const trade of trades) {
+                            const price = parseFloat(trade.price);
+                            const qty = parseFloat(trade.qty);
+                            const fee = parseFloat(trade.commission || 0); // Simplified fee
+                            const isBuyer = trade.isBuyer;
 
-                                totalQty -= qty;
-                                totalCost -= costBasis; // Reduce cost basis proportionally
+                            if (isBuyer) {
+                                totalQty += qty;
+                                totalCost += (price * qty);
+                            } else {
+                                // Sell
+                                if (totalQty > 0) {
+                                    const avgBuyPrice = totalCost / totalQty;
+                                    const costBasis = avgBuyPrice * qty;
+                                    const sellValue = price * qty;
+                                    realizedPL += (sellValue - costBasis);
+
+                                    totalQty -= qty;
+                                    totalCost -= costBasis; // Reduce cost basis proportionally
+                                }
                             }
                         }
+
+                        // Only track active positions
+                        if (totalQty > 0.00001) { // Ignore dust
+                            const avgPrice = totalQty > 0 ? totalCost / totalQty : 0;
+
+                            userSymbols.set(symbol, {
+                                symbol,
+                                qty: totalQty,
+                                avgPrice: avgPrice,
+                                invested: totalCost,
+                                currentPrice: 0, // Will be updated by live feed
+                                unrealizedPL: 0,
+                                unrealizedPLPercent: 0,
+                                timestamp: Date.now()
+                            });
+                        }
+
+                    } catch (e) {
+                        // Ignore symbol errors
                     }
-
-                    // Only track active positions
-                    if (totalQty > 0.00001) { // Ignore dust
-                        const avgPrice = totalQty > 0 ? totalCost / totalQty : 0;
-
-                        userSymbols.set(symbol, {
-                            symbol,
-                            qty: totalQty,
-                            avgPrice: avgPrice,
-                            invested: totalCost,
-                            currentPrice: 0, // Will be updated by live feed
-                            unrealizedPL: 0,
-                            unrealizedPLPercent: 0,
-                            timestamp: Date.now()
-                        });
-                    }
-
-                } catch (e) {
-                    // Symbol might not exist or other error, ignore
                 }
             }
 

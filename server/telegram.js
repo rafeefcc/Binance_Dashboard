@@ -45,12 +45,13 @@ async function calculateInflowForSymbol(symbol, userId) {
 async function getTop5Coins(userId) {
     try {
         const ticker = await getTickerPrice();
-        const usdtPairs = ticker
-            .filter(t => t.symbol.endsWith('USDT'))
+        const validQuoteAssets = ['USDT', 'FDUSD'];
+        const pairs = ticker
+            .filter(t => validQuoteAssets.some(quote => t.symbol.endsWith(quote)))
             .map(t => t.symbol)
             .slice(0, 50); // Check top 50 by volume to avoid timeout
 
-        const inflowPromises = usdtPairs.map(symbol => calculateInflowForSymbol(symbol, userId));
+        const inflowPromises = pairs.map(symbol => calculateInflowForSymbol(symbol, userId));
         const results = await Promise.all(inflowPromises);
 
         const validResults = results.filter(r => r !== null);
@@ -162,8 +163,11 @@ function setupCommandHandlers(bot, userId) {
         // Skip if it's a command
         if (!text || text.startsWith('/')) return;
 
-        // Check if it's a valid pair format
-        if (text.endsWith('USDT') && text.length > 4) {
+        // Check if it's a valid pair format (ends with USDT or FDUSD)
+        const validQuoteAssets = ['USDT', 'FDUSD'];
+        const isMatched = validQuoteAssets.some(quote => text.endsWith(quote)) && text.length > 5;
+
+        if (isMatched) {
             await bot.sendMessage(chatId, `🔍 Fetching data for ${text}...`);
 
             try {

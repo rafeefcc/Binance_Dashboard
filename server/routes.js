@@ -1,7 +1,7 @@
 const express = require('express');
 const passport = require('passport');
 const { ensureAuthenticated } = require('./auth');
-const { getAccountInfo, getTrades, getAllOrders, getOpenOrders, getTickerPrice, getApiKeys } = require('./binance');
+const { getAccountInfo, getTrades, getAllOrders, getOpenOrders, getTickerPrice, getApiKeys, getExchangeInfo } = require('./binance');
 const { getPublicSettings, saveSettings } = require('./settings');
 const { scanMarkets } = require('./marketScanner');
 const { initBotForUser } = require('./telegram');
@@ -109,12 +109,35 @@ router.get('/api/trades/all', ensureAuthenticated, async (req, res) => {
         console.log(`[API] Fetching account info for user ${req.user.id}`);
         const account = await getAccountInfo(req.user.id);
 
-        let symbols = account.balances
-            .filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
-            .map(b => b.asset + 'USDT')
-            .filter(s => s !== 'USDTUSDT');
+        const exchangeInfo = await getExchangeInfo();
+        const validQuoteAssets = ['USDT', 'FDUSD'];
 
-        console.log(`[API] Found ${symbols.length} symbols with balance:`, symbols);
+        const heldAssets = account.balances
+            .filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
+            .map(b => b.asset);
+
+        let symbols = [];
+        heldAssets.forEach(asset => {
+            // Skip the quote assets themselves (e.g., don't look for USDTUSDT)
+            if (validQuoteAssets.includes(asset)) return;
+
+            // Find all symbols where this asset is the base and quote is USDT or FDUSD
+            const pairs = exchangeInfo.symbols
+                .filter(s => s.baseAsset === asset && validQuoteAssets.includes(s.quoteAsset))
+                .map(s => s.symbol);
+
+            symbols.push(...pairs);
+        });
+
+        // Also add direct FDUSD/USDT conversion if they have it
+        if (heldAssets.includes('FDUSD') && !heldAssets.includes('USDT')) {
+            // Check if FDUSDUSDT exists
+            if (exchangeInfo.symbols.some(s => s.symbol === 'FDUSDUSDT')) {
+                symbols.push('FDUSDUSDT');
+            }
+        }
+
+        console.log(`[API] Found ${symbols.length} symbols with balance and matching quote pairs:`, symbols);
 
         // Fallback: If no balances, check recent orders (optional, or just return empty)
         // For now, let's also add some common pairs if the user has no balances but might have history
@@ -157,10 +180,21 @@ router.get('/api/portfolio', ensureAuthenticated, async (req, res) => {
 
         // Get account info to identify symbols
         const account = await getAccountInfo(req.user.id);
-        const symbols = account.balances
+        const exchangeInfo = await getExchangeInfo();
+        const validQuoteAssets = ['USDT', 'FDUSD'];
+
+        const heldAssets = account.balances
             .filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
-            .map(b => b.asset + 'USDT')
-            .filter(s => s !== 'USDTUSDT');
+            .map(b => b.asset);
+
+        let symbols = [];
+        heldAssets.forEach(asset => {
+            if (validQuoteAssets.includes(asset)) return;
+            const pairs = exchangeInfo.symbols
+                .filter(s => s.baseAsset === asset && validQuoteAssets.includes(s.quoteAsset))
+                .map(s => s.symbol);
+            symbols.push(...pairs);
+        });
 
         const allTrades = [];
         for (const symbol of symbols) {

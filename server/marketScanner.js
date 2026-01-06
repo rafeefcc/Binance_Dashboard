@@ -11,11 +11,12 @@ let isScanning = false;
 async function initializeScanner() {
     try {
         const exchangeInfo = await getExchangeInfo();
+        const validQuoteAssets = ['USDT', 'FDUSD'];
         allSymbols = exchangeInfo.symbols
-            .filter(s => s.symbol.endsWith('USDT') && s.status === 'TRADING')
+            .filter(s => validQuoteAssets.includes(s.quoteAsset) && s.status === 'TRADING')
             .map(s => s.symbol);
 
-        console.log(`📊 Market Scanner initialized with ${allSymbols.length} USDT pairs`);
+        console.log(`📊 Market Scanner initialized with ${allSymbols.length} pairs (${validQuoteAssets.join('/')})`);
         return true;
     } catch (error) {
         console.error('Failed to initialize market scanner:', error.message);
